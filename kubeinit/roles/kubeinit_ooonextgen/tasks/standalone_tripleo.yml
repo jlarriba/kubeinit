@@ -150,6 +150,51 @@
       register: _result
       changed_when: "_result.rc == 0"
 
+    - name: Create the observability templates
+      ansible.builtin.shell: |
+        set -o pipefail
+        # --- create the standalone-osp-telemetry.yaml so that CloudOps services are enabled
+        cat <<EOF > $HOME/standalone-osp-telemetry.yaml
+        resource_registry:
+          OS::TripleO::Services::AodhApi: /usr/share/openstack-tripleo-heat-templates/deployment/aodh/aodh-api-container-puppet.yaml
+          OS::TripleO::Services::AodhEvaluator: /usr/share/openstack-tripleo-heat-templates/deployment/aodh/aodh-evaluator-container-puppet.yaml
+          OS::TripleO::Services::AodhListener: /usr/share/openstack-tripleo-heat-templates/deployment/aodh/aodh-listener-container-puppet.yaml
+          OS::TripleO::Services::AodhNotifier: /usr/share/openstack-tripleo-heat-templates/deployment/aodh/aodh-notifier-container-puppet.yaml
+          OS::TripleO::Services::CeilometerAgentCentral: /usr/share/openstack-tripleo-heat-templates/deployment/ceilometer/ceilometer-agent-central-container-puppet.yaml
+          OS::TripleO::Services::CeilometerAgentNotification: /usr/share/openstack-tripleo-heat-templates/deployment/ceilometer/ceilometer-agent-notification-container-puppet.yaml
+          OS::TripleO::Services::ComputeCeilometerAgent: /usr/share/openstack-tripleo-heat-templates/deployment/ceilometer/ceilometer-agent-compute-container-puppet.yaml
+          OS::TripleO::Services::GnocchiApi: /usr/share/openstack-tripleo-heat-templates/deployment/gnocchi/gnocchi-api-container-puppet.yaml
+          OS::TripleO::Services::GnocchiMetricd: /usr/share/openstack-tripleo-heat-templates/deployment/gnocchi/gnocchi-metricd-container-puppet.yaml
+          OS::TripleO::Services::GnocchiStatsd: /usr/share/openstack-tripleo-heat-templates/deployment/gnocchi/gnocchi-statsd-container-puppet.yaml
+          OS::TripleO::Services::Redis: /usr/share/openstack-tripleo-heat-templates/deployment/database/redis-container-puppet.yaml
+
+          # NOTE: this is the same as the default right now. For the real deployment we should use rsyslog-container-puppet.yaml and configure amqp1 or elasticsearch
+          OS::TripleO::Services::Rsyslog: /usr/share/openstack-tripleo-heat-templates/deployment/logging/rsyslog-baremetal-ansible.yaml
+        EOF
+
+        cat <<EOF > $HOME/enable-osp-telemetry.yaml
+        parameter_defaults:
+          NotificationDriver: 'messagingv2'
+          # uncomment the next two lines when using ceph
+          # GnocchiRbdPoolName: 'metrics'
+          # GnocchiBackend: 'rbd'
+          GnocchiArchivePolicy: 'high'
+          CeilometerEnableGnocchi: true
+          ManagePipeline: true
+          EventPipelinePublishers:
+            - gnocchi://
+          PipelinePublishers:
+            - gnocchi://
+        EOF
+
+      args:
+        executable: /bin/bash
+      become: true
+      become_method: su
+      become_user: stack
+      register: _result
+      changed_when: "_result.rc == 0"
+
     - name: Run the ooo deployment
       block:
         - name: Run the ooo standalone deployment 1st time
@@ -172,6 +217,8 @@
               -r /usr/share/openstack-tripleo-heat-templates/roles/Standalone.yaml \
               -e $HOME/containers-prepare-parameters.yaml \
               -e $HOME/standalone_parameters.yaml \
+              -e $HOME/standalone-osp-telemetry.yaml \
+              -e $HOME/enable-osp-telemetry.yaml \
               -e /usr/share/openstack-tripleo-heat-templates/environments/low-memory-usage.yaml \
               --output-dir $HOME
 
@@ -218,6 +265,8 @@
               -r /usr/share/openstack-tripleo-heat-templates/roles/Standalone.yaml \
               -e $HOME/containers-prepare-parameters.yaml \
               -e $HOME/standalone_parameters.yaml \
+              -e $HOME/standalone-osp-telemetry.yaml \
+              -e $HOME/enable-osp-telemetry.yaml \
               -e /usr/share/openstack-tripleo-heat-templates/environments/low-memory-usage.yaml \
               --output-dir $HOME
 
